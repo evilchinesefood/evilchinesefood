@@ -203,18 +203,62 @@ def solve(grid, cap=999):
     return route, eats, growth, BASE_LEN + len(growth), len(remaining)
 
 
+FONT3x5 = {
+    "A": ["010", "101", "111", "101", "101"], "B": ["110", "101", "110", "101", "110"],
+    "C": ["011", "100", "100", "100", "011"], "D": ["110", "101", "101", "101", "110"],
+    "E": ["111", "100", "110", "100", "111"], "F": ["111", "100", "110", "100", "100"],
+    "G": ["011", "100", "101", "101", "011"], "H": ["101", "101", "111", "101", "101"],
+    "I": ["111", "010", "010", "010", "111"], "J": ["001", "001", "001", "101", "010"],
+    "K": ["101", "101", "110", "101", "101"], "L": ["100", "100", "100", "100", "111"],
+    "M": ["101", "111", "111", "101", "101"], "N": ["101", "111", "111", "111", "101"],
+    "O": ["010", "101", "101", "101", "010"], "P": ["110", "101", "110", "100", "100"],
+    "Q": ["010", "101", "101", "110", "011"], "R": ["110", "101", "110", "101", "101"],
+    "S": ["011", "100", "010", "001", "110"], "T": ["111", "010", "010", "010", "010"],
+    "U": ["101", "101", "101", "101", "111"], "V": ["101", "101", "101", "101", "010"],
+    "W": ["101", "101", "111", "111", "101"], "X": ["101", "101", "010", "101", "101"],
+    "Y": ["101", "101", "010", "010", "010"], "Z": ["111", "001", "010", "100", "111"],
+}
+
+
+def layout_name(text, ncols, rows=7, gap=1, space=2):
+    """Place uppercase text as 3x5 pixels centered in the grid. Returns
+    (cells, nletters, start_col, total_w); cells = (letter, col, row, px, py)."""
+    glyphs = [(ch, FONT3x5.get(ch)) for ch in text.upper()]
+    total_w = 0
+    for i, (ch, g) in enumerate(glyphs):
+        total_w += space if g is None else 3
+        if i < len(glyphs) - 1:
+            total_w += gap
+    start_col = max(0, (ncols - total_w) // 2)
+    row_off = max(0, (rows - 5) // 2)
+    cells, li, col = [], 0, start_col
+    for ch, g in glyphs:
+        if g is None:
+            col += space + gap
+            continue
+        for py in range(5):
+            for px in range(3):
+                if g[py][px] == "1":
+                    cells.append((li, col + px, row_off + py, px, py))
+        li += 1
+        col += 3 + gap
+    return cells, li, start_col, total_w
+
+
 def render(grid, counts, months, route, eats, growth, theme, opts):
     t = THEMES[theme]
     ncols = len(grid)
     n = len(route)
     name = getattr(opts, "name", "") or ""
     if name:
-        SETTLE, NAME_FADE, NAME_HOLD = 5, 10, 26
-        blink_start = n + SETTLE
+        name_cells, nletters, start_col, total_w = layout_name(name, ncols)
+        blink_start = n + 5
         bmk = [blink_start, blink_start + 3, blink_start + 6, blink_start + 9]  # off,on,off,on
-        name_start = blink_start + 12
-        name_full = name_start + NAME_FADE
-        total = name_full + NAME_HOLD
+        snake_gone = blink_start + 12
+        name_start = snake_gone + 3
+        LETTER_STEP = 3
+        name_full = name_start + max(1, nletters) * LETTER_STEP
+        total = name_full + 30
     else:
         total = n + PAUSE_STEPS
     dur = total / STEPS_PER_SEC
@@ -241,14 +285,14 @@ def render(grid, counts, months, route, eats, growth, theme, opts):
     final_body = set(prev)
 
     eaten_step = {cell: s for s, cell in eats}
-    css, body = [], []
+    css, body, cells_out = [], [], []
     for c in range(ncols):
         for r in range(len(grid[c])):
             x, y = xy(c, r)
             base = t["levels"][grid[c][r]]
             ivs = intervals.get((c, r), [])
             cls = f"c{c}_{r}"
-            body.append(f'<rect class="{cls}" x="{x}" y="{y}" width="{CELL}" height="{CELL}" rx="2.5" fill="{base}"/>')
+            cells_out.append(f'<rect class="{cls}" x="{x}" y="{y}" width="{CELL}" height="{CELL}" rx="2.5" fill="{base}"/>')
             if not ivs:
                 continue
             stops = [(0.0, base)]
@@ -307,7 +351,9 @@ def render(grid, counts, months, route, eats, growth, theme, opts):
     mono = "ui-monospace,'SF Mono',Menlo,Consolas,monospace"
     if name:
         empty = t["levels"][0]
+        greens = t["levels"][1:]
         d = 0.05
+        # snake blinks twice (final body covered by empty cells, pulsed)
         bo = [pct(m) for m in bmk]
         kb = (f"0% {{opacity:0}} "
               f"{max(bo[0]-d,0)}% {{opacity:0}} {bo[0]}% {{opacity:1}} "
@@ -318,16 +364,23 @@ def render(grid, counts, months, route, eats, growth, theme, opts):
         css.append(f"@keyframes ksnakeblink {{ {kb} }}\n.sblink {{ animation:ksnakeblink {dur:.1f}s linear infinite; }}")
         for (c, r) in sorted(final_body):
             x, y = xy(c, r)
-            body.append(f'<rect class="sblink" x="{x}" y="{y}" width="{CELL}" height="{CELL}" rx="2.5" fill="{empty}" opacity="0"/>')
-        ns, nf = pct(name_start), pct(name_full)
-        kn = f"0% {{opacity:0}} {ns}% {{opacity:0}} {nf}% {{opacity:1}} 100% {{opacity:1}}"
-        css.append(f"@keyframes knamein {{ {kn} }}\n.nm {{ animation:knamein {dur:.1f}s ease infinite; }}")
-        cx, cy = w / 2, MTOP + (7 * PITCH - GAP) / 2 + 1
-        body.append(
-            f'<text class="nm" x="{cx:.1f}" y="{cy:.1f}" opacity="0" text-anchor="middle" '
-            f'dominant-baseline="central" '
-            f'style="font-family:{mono}; font-size:32px; font-weight:700; letter-spacing:2px; '
-            f'fill:{t["snake"]}; stroke:{t["frame_bg"]}; stroke-width:3px; paint-order:stroke;">{name}</text>')
+            cells_out.append(f'<rect class="sblink" x="{x}" y="{y}" width="{CELL}" height="{CELL}" rx="2.5" fill="{empty}" opacity="0"/>')
+        # whole board fades out (snake + squares) so the name reads on any background
+        g = pct(snake_gone)
+        css.append(f"@keyframes kboard {{ 0% {{opacity:1}} {g}% {{opacity:1}} {pct(snake_gone+3)}% {{opacity:0}} 100% {{opacity:0}} }}\n.board {{ animation:kboard {dur:.1f}s linear infinite; }}")
+        # name: light the boxes, typing on one letter at a time
+        for li in range(nletters):
+            a = pct(name_start + li * LETTER_STEP)
+            b = pct(name_start + li * LETTER_STEP + 2)
+            kn = f"0% {{opacity:0}} {max(a-d,0)}% {{opacity:0}} {b}% {{opacity:1}} 100% {{opacity:1}}"
+            css.append(f"@keyframes knl{li} {{ {kn} }}\n.nl{li} {{ animation:knl{li} {dur:.1f}s ease infinite; }}")
+        span = max(1, total_w - 1)
+        for (li, c, r, px, py) in name_cells:
+            x, y = xy(c, r)
+            base = min(3, int((c - start_col) / span * 4))
+            gi = min(3, base + ((px + py + li) % 2))
+            body.append(f'<rect class="nl{li}" x="{x}" y="{y}" width="{CELL}" height="{CELL}" rx="2.5" fill="{greens[gi]}" opacity="0"/>')
+    board_group = '<g class="board">\n' + "\n".join("  " + s for s in cells_out) + "\n  </g>"
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}">
   <style>
     .lab {{ font-family:{mono}; font-size:9.5px; fill:{t['text']}; }}
@@ -336,6 +389,7 @@ def render(grid, counts, months, route, eats, growth, theme, opts):
     {chr(10).join(css)}
   </style>
   {frame_open}
+  {board_group}
   {chr(10).join('  ' + b for b in body)}
   {frame_close}
 </svg>
