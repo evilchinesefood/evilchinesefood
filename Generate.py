@@ -353,21 +353,20 @@ def render(grid, counts, months, route, eats, growth, theme, opts):
         empty = t["levels"][0]
         greens = t["levels"][1:]
         d = 0.05
-        # snake blinks twice (final body covered by empty cells, pulsed)
+        # snake blinks twice, then stays covered by empty boxes (vanishes into the grid,
+        # which stays visible to fill the space around the letters)
         bo = [pct(m) for m in bmk]
+        gone = pct(snake_gone)
         kb = (f"0% {{opacity:0}} "
               f"{max(bo[0]-d,0)}% {{opacity:0}} {bo[0]}% {{opacity:1}} "
               f"{max(bo[1]-d,0)}% {{opacity:1}} {bo[1]}% {{opacity:0}} "
               f"{max(bo[2]-d,0)}% {{opacity:0}} {bo[2]}% {{opacity:1}} "
               f"{max(bo[3]-d,0)}% {{opacity:1}} {bo[3]}% {{opacity:0}} "
-              f"100% {{opacity:0}}")
+              f"{max(gone-d,0)}% {{opacity:0}} {gone}% {{opacity:1}} 100% {{opacity:1}}")
         css.append(f"@keyframes ksnakeblink {{ {kb} }}\n.sblink {{ animation:ksnakeblink {dur:.1f}s linear infinite; }}")
         for (c, r) in sorted(final_body):
             x, y = xy(c, r)
             cells_out.append(f'<rect class="sblink" x="{x}" y="{y}" width="{CELL}" height="{CELL}" rx="2.5" fill="{empty}" opacity="0"/>')
-        # whole board fades out (snake + squares) so the name reads on any background
-        g = pct(snake_gone)
-        css.append(f"@keyframes kboard {{ 0% {{opacity:1}} {g}% {{opacity:1}} {pct(snake_gone+3)}% {{opacity:0}} 100% {{opacity:0}} }}\n.board {{ animation:kboard {dur:.1f}s linear infinite; }}")
         # name: light the boxes, typing on one letter at a time
         for li in range(nletters):
             a = pct(name_start + li * LETTER_STEP)
